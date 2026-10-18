@@ -100,6 +100,31 @@ class TestReport(unittest.TestCase):
         self.assertIn("after fix", out)
 
 
+class TestEnvelopeAccounting(unittest.TestCase):
+    def test_status_message_is_payload_not_envelope(self):
+        # A status event carrying a long agent message is mostly content; the
+        # old code booked the whole event as envelope overhead.
+        ev_ = {"jsonrpc": "2.0", "id": 1, "result": {
+            "kind": "status-update", "taskId": "t1",
+            "status": {"state": "working", "message": {
+                "role": "agent", "parts": [{"kind": "text", "text": "x" * 800}]}}}}
+        m = st.measure([ev_])
+        self.assertLess(m["envelope"], m["total"] * 0.5, m)
+
+    def test_envelope_tracked_per_kind(self):
+        ev_ = {"jsonrpc": "2.0", "id": 1, "result": {
+            "kind": "artifact-update", "taskId": "t1",
+            "artifact": {"artifactId": "a1", "parts": [{"kind": "data", "data": {}}]}}}
+        m = st.measure([ev_])
+        self.assertIn("envelope", m["buckets"][st.classify(ev_)])
+
+    def test_simulate_reports_status_share(self):
+        card = {"name": "x", "description": "y" * 40, "skills": []}
+        m = st.simulate(card, updates=10, artifacts=2)
+        self.assertIn("status_share_pct", m)
+        self.assertNotIn("envelope_share_pct", m)
+
+
 class TestEventTokens(unittest.TestCase):
     def test_deterministic(self):
         e = ev()

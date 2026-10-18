@@ -23,19 +23,20 @@ $ a2a-stream-tax measure stream.jsonl
 events: 35
   status     (  30 ev)  :    2,270 tok
   artifact   (   5 ev)  :      310 tok
-  envelope overhead   :    2,405 tok
-  TOTAL               :    2,580 tok
+  of which envelope overhead:    1,535 tok
+  TOTAL streamed           :    2,580 tok  (~$0.0077)
 
 $ a2a-stream-tax report stream.jsonl
 
   TOTAL streamed           :    2,580 tok  (~$0.0077)
   with the fix (coalesce status + trim envelope):
-    after fix              :      258 tok  (~$0.0008)
-    savings                :    2,322 tok  (90%)
+    after fix              :      325 tok  (~$0.0010)
+    savings                :    2,255 tok  (87%)
 
 $ a2a-stream-tax simulate https://agent.example.com --updates 30
 card_tokens           : 391
 per_status_tokens     : 70
+status_share_pct      : 75.5   # status events' share of the bill, not envelope
 total                 : 2,781
 ```
 

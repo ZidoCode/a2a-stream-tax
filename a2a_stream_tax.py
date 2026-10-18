@@ -85,16 +85,21 @@ def measure(events):
         t = event_tokens(ev)
         total += t
         k = classify(ev)
-        b = buckets.setdefault(k, {"count": 0, "tokens": 0})
+        b = buckets.setdefault(k, {"count": 0, "tokens": 0, "envelope": 0})
         b["count"] += 1
         b["tokens"] += t
-        # envelope = the JSON-RPC frame + task/status boilerplate around the payload
+        # envelope = the JSON-RPC frame + task/status boilerplate around the payload.
+        # Payload is every real content field: artifact chunks, history, and the
+        # status message text. Treating a status event as pure envelope overstates
+        # the overhead, because its message is the thing the caller actually reads.
         res = ev.get("result") if isinstance(ev.get("result"), dict) else {}
-        payload = res.get("artifact") or res.get("history")
-        if payload is not None:
-            envelope += t - est_tokens(json.dumps(payload, separators=(",", ":")))
-        else:
-            envelope += t
+        status = res.get("status") if isinstance(res.get("status"), dict) else {}
+        pieces = [res.get("artifact"), res.get("history"), status.get("message")]
+        payload_t = sum(est_tokens(json.dumps(p, separators=(",", ":")))
+                        for p in pieces if p)
+        env = max(0, t - payload_t)
+        envelope += env
+        b["envelope"] += env
     return {"total": total, "events": len(events), "buckets": buckets,
             "envelope": max(0, envelope)}
 
@@ -128,7 +133,7 @@ def simulate(card, updates=30, artifacts=5):
     return {"card_tokens": card_t, "skills": skills,
             "status_events": updates, "per_status_tokens": per_status,
             "artifact_events": artifacts, "per_artifact_tokens": per_art,
-            "envelope_share_pct": round(100 * (per_status * updates) / total, 1) if total else 0,
+            "status_share_pct": round(100 * (per_status * updates) / total, 1) if total else 0,
             "total": total}
 
 
@@ -148,8 +153,10 @@ def report(events, price_per_mtok):
 
     # coalesce: keep first/last status, drop intermediate chatter
     coalesced = total - max(0, status_b["tokens"] - 2 * (status_b["tokens"] // max(1, status_b["count"])))
-    # envelope trim: metadata repetition is ~re-shipping status blocks
-    after = coalesced - m["envelope"] // 2
+    # envelope trim: stream artifacts as bare chunks, so their per-event frame
+    # disappears. Envelope belonging to dropped status events is already gone
+    # with the events themselves — subtracting it again would double-count.
+    after = coalesced - art_b.get("envelope", 0)
     after = max(total // 10, after)  # never model below 10% of measured
     savings = total - after
     pct = round(100 * savings / total, 0) if total else 0
